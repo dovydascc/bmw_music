@@ -18,12 +18,16 @@
 // flutter run
 
 import 'dart:async';
+import 'dart:io' as io;
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_service_example/common.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 
 // You might want to provide this using dependency injection rather than a
@@ -31,14 +35,20 @@ import 'package:rxdart/rxdart.dart';
 late AudioHandler _audioHandler;
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final session = await AudioSession.instance;
+  await session.configure(const AudioSessionConfiguration.music());
+
+  final audioPlayerHandler = await AudioPlayerHandler.create();
   _audioHandler = await AudioService.init(
-    builder: () => AudioPlayerHandler(),
+    builder: () => audioPlayerHandler,
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.ryanheise.myapp.channel.audio',
       androidNotificationChannelName: 'Audio playback',
       androidNotificationOngoing: true,
     ),
   );
+  _audioHandler.play();
   runApp(const MyApp());
 }
 
@@ -86,13 +96,13 @@ class MainScreen extends StatelessWidget {
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _button(Icons.fast_rewind, _audioHandler.rewind),
+                    _button(Icons.skip_previous, _audioHandler.skipToPrevious),
                     if (playing)
                       _button(Icons.pause, _audioHandler.pause)
                     else
                       _button(Icons.play_arrow, _audioHandler.play),
                     _button(Icons.stop, _audioHandler.stop),
-                    _button(Icons.fast_forward, _audioHandler.fastForward),
+                    _button(Icons.skip_next, _audioHandler.skipToNext),
                   ],
                 );
               },
@@ -153,17 +163,36 @@ class MediaState {
 
 /// An [AudioHandler] for playing a single item.
 class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
-  static final _item = MediaItem(
-    id: 'https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3',
-    album: "Science Friday",
-    title: "A Salute To Head-Scratching Science",
-    artist: "Science Friday and WNYC Studios",
-    duration: const Duration(milliseconds: 5739820),
-    artUri: Uri.parse(
-        'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
-  );
+  static int _nextMediaId = 0;
+
+  static Future<List<io.FileSystemEntity>> _listOfFiles() async {
+    await Permission.storage.request();
+    final fileList =
+        io.Directory("/storage/emulated/0/Music/").listSync(recursive: true);
+    return fileList
+        .where((fileSystemEntity) => fileSystemEntity.path.endsWith('mp3'))
+        .toList();
+  }
+
+  static Future<ConcatenatingAudioSource> _createPlaylist() async {
+    final fileList = await _listOfFiles();
+    return ConcatenatingAudioSource(
+        children: fileList
+            .map((file) => AudioSource.uri(
+                  file.uri,
+                  tag: MediaItem(
+                    id: '${_nextMediaId++}',
+                    album: "Music",
+                    title: file.path,
+                    artUri: Uri.parse(
+                        "https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg"),
+                  ),
+                ))
+            .toList());
+  }
 
   final _player = AudioPlayer();
+  late ConcatenatingAudioSource _playlist;
 
   /// Initialise our audio handler.
   AudioPlayerHandler() {
@@ -171,11 +200,17 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
     // what state to display, here we set up our audio handler to broadcast all
     // playback state changes as they happen via playbackState...
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
-    // ... and also the current media item via mediaItem.
-    mediaItem.add(_item);
+  }
 
+  static Future<AudioPlayerHandler> create() async {
     // Load the player.
-    _player.setAudioSource(AudioSource.uri(Uri.parse(_item.id)));
+    final audioPlayerHandler = AudioPlayerHandler();
+    audioPlayerHandler._playlist = await _createPlaylist();
+    await audioPlayerHandler._player.setAudioSource(audioPlayerHandler._playlist);
+    await audioPlayerHandler._player.shuffle();
+    await audioPlayerHandler._player.setShuffleModeEnabled(true);
+    await audioPlayerHandler._player.setLoopMode(LoopMode.all);
+    return audioPlayerHandler;
   }
 
   // In this simple example, we handle only 4 actions: play, pause, seek and
@@ -194,6 +229,44 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() => _player.stop();
+
+  @override
+  Future<void> skipToNext() => _player.seekToNext();
+
+  @override
+  Future<void> skipToPrevious() => _player.seekToPrevious();
+
+  @override
+  Future<void> click([MediaButton button = MediaButton.media]) async {
+    if (button == MediaButton.previous) {
+      await deleteSong();
+    }
+    await super.click(button);
+  }
+
+  Future<void> deleteSong() async {
+    print('Deleting song');
+    final currentIndex = _player.currentIndex;
+    if (currentIndex == null) return;
+    final currentSource = _player.sequenceState!.currentSource;
+    final path = currentSource!.tag.title as String;
+
+    _player.hasNext == true ? await _player.seekToNext() : await _player.stop();
+    // Seek to next again, because we will delete current song from queues
+    _player.hasNext == true ? await _player.seekToNext() : await _player.stop();
+    await _playlist.removeAt(currentIndex);
+    await deleteFile(File(path));
+  }
+
+  Future<void> deleteFile(File file) async {
+    try {
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+    } catch (e) {
+      print('There was an error while deleting $e');
+    }
+  }
 
   /// Transform a just_audio event into an audio_service state.
   ///
