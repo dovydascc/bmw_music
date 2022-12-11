@@ -49,6 +49,12 @@ Future<void> main() async {
     ),
   );
   _audioHandler.play();
+  
+  audioPlayerHandler._player.sequenceStateStream.listen((event) { 
+    if (event?.currentSource?.tag == null) return;
+    audioPlayerHandler.mediaItem.add(event?.currentSource?.tag as MediaItem);
+  });
+  
   runApp(const MyApp());
 }
 
