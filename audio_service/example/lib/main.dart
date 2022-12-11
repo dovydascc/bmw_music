@@ -65,7 +65,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'BMW Music',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      darkTheme: ThemeData.dark(),
       home: const MainScreen(),
     );
   }
@@ -190,6 +190,7 @@ class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
                     id: '${_nextMediaId++}',
                     album: "Music",
                     title: file.path,
+                    duration: const Duration(minutes: 3),
                     artUri: Uri.parse(
                         "https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg"),
                   ),
