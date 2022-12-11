@@ -60,7 +60,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Audio Service Demo',
+      title: 'BMW Music',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: const MainScreen(),
     );
@@ -80,7 +80,7 @@ class MainScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Audio Service Demo'),
+        title: const Text('BMW Music'),
       ),
       body: Center(
         child: Column(

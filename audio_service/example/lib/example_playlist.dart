@@ -38,8 +38,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Audio Service Demo',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      title: 'BMW Music',
+      theme: ThemeData(primarySwatch: Colors.blue, brightness: Brightness.dark),
       home: const MainScreen(),
     );
   }
